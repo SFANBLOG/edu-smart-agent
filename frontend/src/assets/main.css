@@ -1,0 +1,60 @@
+:root {
+  --bg: #0f1117;
+  --panel: #151a24;
+  --border: #232a38;
+  --text: #e7e9ee;
+  --muted: #7f8aa3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* 深色微调 Element Plus 卡片/表格观感 */
+.el-card,
+.el-table,
+.el-table__expanded-cell {
+  background: var(--panel) !important;
+  color: var(--text);
+}
+.el-card {
+  border: 1px solid var(--border) !important;
+}
+.el-table tr,
+.el-table th.el-table__cell,
+.el-table td.el-table__cell {
+  background: var(--panel) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+.el-table th.el-table__cell {
+  color: var(--muted) !important;
+}
+.el-empty__description p {
+  color: var(--muted);
+}
+.ok {
+  color: #57d38c;
+  font-weight: 600;
+}
+.bad {
+  color: #ff6b6b;
+  font-weight: 600;
+}
+.muted {
+  color: var(--muted);
+}

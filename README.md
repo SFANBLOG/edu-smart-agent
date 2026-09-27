@@ -1,6 +1,7 @@
 # AI 批改 · 错题分析 · 学情分析 · 智能辅导系统
 
-> **FastAPI + LangChain + LangGraph + Agent + 多模态大模型** 实现的教育智能体系统。
+> **前后端分离的多智能体教育系统**：后端 **FastAPI + LangChain + LangGraph + Agent + 多模态大模型**，
+> 前端 **Vue3 + Vite + TypeScript + Element Plus + Pinia**。
 > 教师上传学生作业图片 → 多模态大模型**逐题批改** → 自动**错题归因** → 沉淀**错题本** →
 > 聚合产出**学情分析报告**；并对学生提供**苏格拉底式辅导**、**薄弱点智能推题**、**遗忘曲线复习调度**。
 
@@ -38,7 +39,7 @@ git push origin master ; git push github master
 
 ```
                      ┌───────────────── LangGraph（按 task 路由）─────────────────┐
- 教师/学生端(浏览器)  │                                                             │
+ 教师/学生端(Vue3)    │                                                             │
 ┌───────────┐ HTTP   │  START ┬─ "grade"     ▶ [grading] ▶ [error] ▶ [persist] ▶ END │
 │ 作业图片   │───────▶│        ├─ "analytics" ▶ [stats]   ▶ [report]          ▶ END  │
 │ 文字/提问  │        │        ├─ "tutor"     ▶ [tutor]                       ▶ END  │
@@ -70,28 +71,39 @@ git push origin master ; git push github master
 
 ```
 edu-smart-agent/
-├── app/
-│   ├── main.py                 # FastAPI 入口
-│   ├── config.py               # 配置(pydantic-settings)
-│   ├── core/llm.py             # 多模态VLM / 文本LLM 工厂
-│   ├── models/                 # 领域模型：批改结果/错题/学情报告/推题/复习
-│   ├── db/store.py             # SQLite：批改记录+错题本(含复习排期)+SQL统计
-│   ├── agents/
-│   │   ├── state.py            # LangGraph 状态(task 路由)
-│   │   ├── prompts.py          # 批改/归因/学情/辅导/推题 提示词
-│   │   ├── grading_agent.py    # AI批改节点(多模态+结构化输出)
-│   │   ├── error_agent.py      # 错题归因 + 落库节点
-│   │   ├── analytics_agent.py  # 学情统计 + AI报告节点
-│   │   ├── tutor_agent.py      # 苏格拉底式辅导对话节点
-│   │   ├── recommend_agent.py  # 薄弱点智能推题节点
-│   │   ├── review_agent.py     # 间隔复习调度节点(确定性)
-│   │   └── graph.py            # LangGraph 管线装配(五路路由)
-│   ├── service/                # 请求模型 + 调用管线
-│   └── api/routes.py           # REST 端点
-├── static/index.html           # 教师/学生端(批改/错题本/学情/辅导/推题/复习 六栏)
-├── scripts/seed_demo.py        # 演示数据(无Key也能看学情)
-├── tests/test_smoke.py         # 冒烟测试(无需密钥)
-├── requirements.txt / .env.example
+├── backend/                        # 后端：FastAPI + LangGraph 多智能体
+│   ├── app/
+│   │   ├── main.py                 # FastAPI 入口（API + 可选托管前端 dist）
+│   │   ├── config.py               # 配置(pydantic-settings，含 CORS 白名单)
+│   │   ├── core/llm.py             # 多模态VLM / 文本LLM 工厂
+│   │   ├── models/                 # 领域模型：批改结果/错题/学情报告/推题/复习
+│   │   ├── db/store.py             # SQLite：批改记录+错题本(含复习排期)+SQL统计
+│   │   ├── agents/
+│   │   │   ├── state.py            # LangGraph 状态(task 路由)
+│   │   │   ├── prompts.py          # 批改/归因/学情/辅导/推题 提示词
+│   │   │   ├── grading_agent.py    # AI批改节点(多模态+结构化输出)
+│   │   │   ├── error_agent.py      # 错题归因 + 落库节点
+│   │   │   ├── analytics_agent.py  # 学情统计 + AI报告节点
+│   │   │   ├── tutor_agent.py      # 苏格拉底式辅导对话节点
+│   │   │   ├── recommend_agent.py  # 薄弱点智能推题节点
+│   │   │   ├── review_agent.py     # 间隔复习调度节点(确定性)
+│   │   │   └── graph.py            # LangGraph 管线装配(五路路由)
+│   │   ├── service/                # 请求模型 + 调用管线
+│   │   └── api/routes.py           # REST 端点
+│   ├── scripts/seed_demo.py        # 演示数据(无Key也能看学情)
+│   ├── tests/test_smoke.py         # 冒烟测试(无需密钥)
+│   └── requirements.txt / .env.example
+├── frontend/                       # 前端：Vue3 + Vite + TS + Element Plus + Pinia
+│   ├── index.html / vite.config.ts # Vite 配置（/api proxy → 后端8000）
+│   ├── package.json / tsconfig.json
+│   └── src/
+│       ├── main.ts / App.vue       # 应用入口
+│       ├── api/                    # axios 客户端 + 端点封装
+│       ├── types/                  # 与后端 Pydantic 对齐的 TS 类型
+│       ├── stores/app.ts           # Pinia：全局学生标识 + 健康探测
+│       ├── router/index.ts         # 六功能路由
+│       ├── layouts/MainLayout.vue  # 侧边导航 + 顶栏
+│       └── views/                  # 批改/错题本/学情/辅导/推题/复习 六视图
 └── README.md
 ```
 
@@ -99,27 +111,45 @@ edu-smart-agent/
 
 ## 🚀 快速开始
 
+项目分为 **`backend/`（FastAPI 多智能体）** 与 **`frontend/`（Vue3）** 两部分，开发期分别启动。
+
+### 1. 后端（API 服务，默认 8000）
+
 ```bash
-cd edu-smart-agent
+cd edu-smart-agent/backend
 python -m venv .venv && .venv\Scripts\activate      # Windows
 pip install -r requirements.txt
 
 copy .env.example .env        # 填入 OPENAI_API_KEY 等
+python scripts/seed_demo.py   # （可选）灌演示数据，未配置Key也能看学情
+uvicorn app.main:app --reload --port 8000
 ```
 
 > 💡 **换国内多模态大模型零改码**：已在 `.env` 用 **阿里通义 DashScope**（`qwen-vl-plus` +
 > `https://dashscope.aliyuncs.com/compatible-mode/v1`）验证可跑通。GLM-4V、文心等 OpenAI 兼容接口同理，
 > 只需替换 `OPENAI_BASE_URL` / `VLM_MODEL` / `LLM_MODEL`。
 
-启动：
-```bash
-# （可选）灌入演示数据，未配置Key也能看学情分析
-python scripts/seed_demo.py
-
-uvicorn app.main:app --reload --port 8000
-```
-- 教师端：http://localhost:8000/
 - 接口文档：http://localhost:8000/docs
+
+### 2. 前端（Vue 开发服务器，默认 5173）
+
+```bash
+cd edu-smart-agent/frontend
+npm install
+npm run dev
+```
+
+- 教师/学生端：http://localhost:5173
+- Vite 已将 `/api` 代理到后端 8000，无需单独配置密钥（由后端统一持有）。
+
+### 3. 生产部署（可选：单进程托管）
+
+```bash
+cd frontend && npm run build      # 产出 frontend/dist
+cd ../backend && uvicorn app.main:app --port 8000   # 自动托管 dist 为 SPA
+```
+
+构建后，后端会将 `frontend/dist` 作为单页应用托管，仅需一个进程即可同时提供 API 与页面。
 
 ---
 
@@ -152,8 +182,9 @@ curl -X POST http://localhost:8000/api/analytics -H "Content-Type: application/j
 
 ## ✅ 验证状态
 
-- `pytest -q` → **7 passed**（应用装配、存储 SQL 聚合、批改链降级、学情端点、
+- `pytest -q`（于 `backend/`）→ **7 passed**（应用装配、存储 SQL 聚合、批改链降级、学情端点、
   复习排期与回写、薄弱点取数、辅导/推题/复习端点无密钥降级）
+- 前端 `npm run build`（`vue-tsc` 类型检查 + Vite 打包）产出 `frontend/dist`，后端可单进程托管。
 - 端到端实测：配置真实 DashScope 密钥后，`/api/analytics` 执行 `['stats','report']`，
   客观统计（知识点掌握度 / 错误类型分布 / 薄弱点排序）正确，且 **AI 学情洞察 narrative 真实生成成功**。
 - 本地旧库兼容：`Store` 启动时自动迁移 `error_records` 新增 `review_count/last_review_at/next_review_at` 列并建索引。

@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     app_name: str = "Edu Smart Agent"
+    # 前端跨域白名单（逗号分隔）；Vite 开发服务器默认 5173
+    cors_origins: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:4173,http://127.0.0.1:4173"
+    )
 
     # ---- 数据 ----
     db_path: str = "data/edu.db"
@@ -29,6 +34,10 @@ class Settings(BaseSettings):
     @property
     def llm_enabled(self) -> bool:
         return bool(self.openai_api_key)
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
 
 @lru_cache

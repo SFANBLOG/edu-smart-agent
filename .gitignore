@@ -1,14 +1,24 @@
-# Python
+# Python（backend/）
 __pycache__/
 *.py[cod]
 .venv/
 venv/
 env/
+*.egg-info/
+.pytest_cache/
 
 # 环境与数据
 .env
 data/
 *.log
+
+# Node / 前端（frontend/）
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+*.tsbuildinfo
 
 # IDE
 .idea/
