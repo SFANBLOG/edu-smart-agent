@@ -38,6 +38,13 @@
     h3 { font-size: 15px; margin-bottom: 10px; color: #cdd6e6; }
     .muted { color: #6b7690; font-size: 13px; }
     pre { white-space: pre-wrap; word-break: break-word; }
+    .chat .me, .chat .ai { max-width: 80%; padding: 10px 14px; border-radius: 12px; margin-bottom: 10px; white-space: pre-wrap; word-break: break-word; }
+    .chat .me { background: #24406e; margin-left: auto; }
+    .chat .ai { background: #1b2331; border: 1px solid #2a3346; }
+    .item { border: 1px solid #232a38; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: #12172180; }
+    .item .hd { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .tag { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: #3a2230; color: #ff9db0; }
+    .diff-基础 { color: #57d38c; } .diff-提高 { color: #ffcc66; } .diff-挑战 { color: #ff6b6b; }
   </style>
 </head>
 <body>
@@ -50,6 +57,9 @@
     <div class="tab active" data-tab="grade">📸 AI 批改</div>
     <div class="tab" data-tab="errors">📕 错题本</div>
     <div class="tab" data-tab="analytics">📊 学情分析</div>
+    <div class="tab" data-tab="tutor">💡 AI 辅导</div>
+    <div class="tab" data-tab="recommend">🎯 智能推题</div>
+    <div class="tab" data-tab="review">⏰ 复习调度</div>
   </div>
 
   <main>
@@ -97,6 +107,46 @@
         </div>
       </div>
       <div id="an-result"></div>
+    </section>
+
+    <!-- AI 辅导 -->
+    <section class="panel" id="p-tutor">
+      <div class="card">
+        <h3>苏格拉底式启发辅导（不直接给答案）</h3>
+        <div class="row" style="margin-bottom:10px">
+          <input type="text" id="tu-student" placeholder="学生ID（用于关联其错题落点）" style="width:280px" />
+        </div>
+        <div id="tu-chat" style="max-height:50vh;overflow:auto;margin-bottom:12px"></div>
+        <div class="row">
+          <textarea id="tu-input" rows="2" placeholder="写下你的题目或思路，例如：这道导数题我不知道从哪入手" style="flex:1"></textarea>
+          <button id="btn-tutor" style="align-self:flex-end">发送</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 智能推题 -->
+    <section class="panel" id="p-recommend">
+      <div class="card">
+        <div class="row">
+          <div style="flex:1"><label>学生ID</label><input type="text" id="rc-student" /></div>
+          <div style="flex:1"><label>学科（留空=全部）</label><input type="text" id="rc-subject" /></div>
+          <div style="flex:1"><label>薄弱点数量</label><input type="text" id="rc-topk" value="3" /></div>
+          <div style="align-self:flex-end"><button id="btn-recommend">生成练习计划</button></div>
+        </div>
+      </div>
+      <div id="rc-result"></div>
+    </section>
+
+    <!-- 复习调度 -->
+    <section class="panel" id="p-review">
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <h3>今日待复习（艾宾浩斯遗忘曲线）</h3>
+          <div class="row"><input type="text" id="rv-student" placeholder="按学生ID筛选" style="width:200px" />
+          <button id="btn-review">刷新队列</button></div>
+        </div>
+        <div id="rv-result" style="margin-top:12px"></div>
+      </div>
     </section>
   </main>
 
@@ -193,6 +243,77 @@
         html += `<div class="card"><h3>错误类型分布</h3>${Object.entries(dist).map(([k,v])=>`<span class="pill">${k}: ${v}</span>`).join('')}</div>`;
       }
       $('an-result').innerHTML = html;
+    };
+
+    // ---------- AI 辅导（多轮） ----------
+    let tuHistory = [];
+    function renderChat() {
+      $('tu-chat').className = 'chat';
+      $('tu-chat').innerHTML = tuHistory.map(m =>
+        `<div class="${m.role === 'user' ? 'me' : 'ai'}">${m.content}</div>`).join('')
+        || '<div class="muted">开始向 AI 老师描述你的题目或卡点……</div>';
+      $('tu-chat').scrollTop = $('tu-chat').scrollHeight;
+    }
+    renderChat();
+    $('btn-tutor').onclick = async () => {
+      const q = $('tu-input').value.trim();
+      if (!q) return;
+      tuHistory.push({ role: 'user', content: q });
+      $('tu-input').value = '';
+      renderChat();
+      const btn = $('btn-tutor'); btn.disabled = true;
+      try {
+        const r = await fetch('/api/tutor', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ student_id: $('tu-student').value || 'anonymous', question: q, history: tuHistory.slice(0, -1) }) });
+        const d = await r.json();
+        const reply = (d.tutor_reply && d.tutor_reply.reply) || '（无回复）';
+        const pts = (d.tutor_reply && d.tutor_reply.grounded_points || []).map(p => `<span class="pill">${p}</span>`).join('');
+        tuHistory.push({ role: 'assistant', content: reply + (pts ? '\n关联薄弱点：' + pts : '') });
+        renderChat();
+      } catch (e) { tuHistory.push({ role: 'assistant', content: '请求失败：' + e }); renderChat(); }
+      finally { btn.disabled = false; }
+    };
+
+    // ---------- 智能推题 ----------
+    $('btn-recommend').onclick = async () => {
+      $('rc-result').innerHTML = '<div class="card muted">根据薄弱点生成变式练习中…</div>';
+      const r = await fetch('/api/recommend', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_id: $('rc-student').value || 'anonymous', subject: $('rc-subject').value || null,
+          top_k: parseInt($('rc-topk').value || '3', 10) }) });
+      const plan = (await r.json()).practice_plan || {};
+      let html = `<div class="card"><h3>练习计划</h3><p class="muted">${plan.plan_summary||''}</p></div>`;
+      (plan.items||[]).forEach(it => { html += `<div class="card"><div class="item"><div class="hd">
+        <b>${it.knowledge_point||'综合'}</b><span class="diff-${it.difficulty}">${it.difficulty||''}</span></div>
+        <p style="margin:8px 0">${it.stem}</p>
+        ${it.hint?`<p class="muted">💡 提示：${it.hint}</p>`:''}
+        ${it.answer?`<p class="muted">参考答案：${it.answer}</p>`:''}
+        ${it.why?`<p class="muted" style="margin-top:6px">为什么推这题：${it.why}</p>`:''}</div></div>`; });
+      if (!(plan.items||[]).length) html += '<div class="card muted">暂无推荐题目（可先批改入库或播种演示数据）。</div>';
+      $('rc-result').innerHTML = html;
+    };
+
+    // ---------- 复习调度 ----------
+    $('btn-review').onclick = loadReview;
+    async function loadReview() {
+      $('rv-result').innerHTML = '<div class="muted">加载到期队列…</div>';
+      const sid = $('rv-student').value;
+      const r = await fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_id: sid || null }) });
+      const d = await r.json();
+      const q = d.review_queue || [];
+      if (!q.length) { $('rv-result').innerHTML = '<div class="muted">今天没有到期需复习的错题，继续保持 👍</div>'; return; }
+      let html = `<div class="muted" style="margin-bottom:10px">共 ${q.length} 道到期${d.reviewed?`（本次已回写 ${d.reviewed}）`:''}</div>`;
+      q.forEach(it => { html += `<div class="item"><div class="hd">
+        <span><b>${it.knowledge_point||''}</b> · 第 ${it.question_no} 题 <span class="tag">逾期 ${it.overdue_days} 天</span>
+          <span class="pill">已复习 ${it.review_count} 次</span></span>
+        <button onclick="markReviewed(${it.error_id})">标记已复习</button></div>
+        <p class="muted" style="margin-top:8px">错因：${it.cause||''}　→　建议：${it.suggestion||''}</p></div>`; });
+      $('rv-result').innerHTML = html;
+    }
+    window.markReviewed = async (id) => {
+      await fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_id: $('rv-student').value || null, review_ids: [id] }) });
+      loadReview();
     };
   </script>
 </body>

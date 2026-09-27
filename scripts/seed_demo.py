@@ -58,12 +58,34 @@ def main() -> None:
             ErrorRecord(
                 student_id=sid, subject=subject, question_no=q.question_no,
                 knowledge_point=q.knowledge_point, error_type=ERR_TYPE[(i + j) % len(ERR_TYPE)],
-                cause="演示错因", suggestion="针对性练习该知识点",
+                student_answer=f"{q.knowledge_point} 处的错误作答",
+                correct_answer=f"{q.knowledge_point} 正确解法",
+                cause=f"{q.knowledge_point} 概念不清",
+                suggestion=f"重做 {q.knowledge_point} 同类题 2 道并复盘",
             )
             for j, q in enumerate(questions) if not q.is_correct
         ]
         store.save_errors(errs)
-    print("演示数据已写入。可启动服务后打开『学情分析』查看。")
+    # 演示：将每个学生最早的两道错题排为“已逾期”，以便复习队列有内容
+    _backdate_due(store)
+    print("演示数据已写入。可启动服务后打开『学情分析/复习/推题』查看。")
+
+
+def _backdate_due(store) -> None:
+    from datetime import datetime, timedelta
+
+    day0 = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+    with store._conn() as c:
+        rows = c.execute(
+            "SELECT id, ROW_NUMBER() OVER (PARTITION BY student_id ORDER BY id) rn"
+            " FROM error_records"
+        ).fetchall()
+        ids = [r["id"] for r in rows if r["rn"] <= 2]
+        if ids:
+            c.executemany(
+                "UPDATE error_records SET next_review_at=? WHERE id=?",
+                [(day0, i) for i in ids],
+            )
 
 
 if __name__ == "__main__":

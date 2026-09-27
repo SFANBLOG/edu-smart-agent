@@ -12,6 +12,9 @@ from app.service.schemas import (
     AgentResponse,
     AnalyticsRequest,
     GradeRequest,
+    RecommendRequest,
+    ReviewRequest,
+    TutorRequest,
 )
 
 
@@ -69,5 +72,55 @@ async def run_analytics(req: AnalyticsRequest) -> AgentResponse:
         task="analytics",
         student_id=req.student_id or "anonymous",
         report=final.report,
+        steps=final.steps,
+    )
+
+
+async def run_tutor(req: TutorRequest) -> AgentResponse:
+    state = PipelineState(
+        task="tutor",
+        student_id=req.student_id,
+        question=req.question,
+        history=req.history,
+    )
+    final = await _run(state, thread_id=f"tutor:{req.student_id}")
+    return AgentResponse(
+        task="tutor",
+        student_id=req.student_id,
+        tutor_reply=final.tutor_reply,
+        steps=final.steps,
+    )
+
+
+async def run_recommend(req: RecommendRequest) -> AgentResponse:
+    state = PipelineState(
+        task="recommend",
+        student_id=req.student_id,
+        subject=req.subject,
+        top_k=req.top_k,
+    )
+    final = await _run(state, thread_id=f"recommend:{req.student_id}")
+    return AgentResponse(
+        task="recommend",
+        student_id=req.student_id,
+        practice_plan=final.practice_plan,
+        steps=final.steps,
+    )
+
+
+async def run_review(req: ReviewRequest) -> AgentResponse:
+    state = PipelineState(
+        task="review",
+        student_id=req.student_id or "anonymous",
+        review_ids=req.review_ids,
+    )
+    final = await _run(
+        state, thread_id=f"review:{req.student_id or 'all'}"
+    )
+    return AgentResponse(
+        task="review",
+        student_id=req.student_id or "anonymous",
+        review_queue=final.review_queue,
+        reviewed=final.reviewed,
         steps=final.steps,
     )

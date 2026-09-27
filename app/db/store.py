@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
@@ -40,11 +40,17 @@ CREATE TABLE IF NOT EXISTS error_records (
     correct_answer TEXT,
     cause TEXT,
     suggestion TEXT,
+    review_count INTEGER NOT NULL DEFAULT 0,
+    last_review_at TEXT,
+    next_review_at TEXT,
     created_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_err_stu ON error_records(student_id);
 CREATE INDEX IF NOT EXISTS idx_err_kp ON error_records(knowledge_point);
 """
+
+# 艾宾浩斯遗忘曲线：按已复习次数递进的复习间隔（天）
+_REVIEW_INTERVALS = [1, 2, 4, 7, 15, 30]
 
 
 class Store:
@@ -53,6 +59,30 @@ class Store:
         self.db_path = db_path
         with self._conn() as c:
             c.executescript(_SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """兼容旧库：为已存在的 error_records 补充复习调度列。"""
+        want = {
+            "review_count": "INTEGER NOT NULL DEFAULT 0",
+            "last_review_at": "TEXT",
+            "next_review_at": "TEXT",
+        }
+        with self._conn() as c:
+            cols = {r["name"] for r in c.execute("PRAGMA table_info(error_records)")}
+            for col, ddl in want.items():
+                if col not in cols:
+                    c.execute(f"ALTER TABLE error_records ADD COLUMN {col} {ddl}")
+            # 历史上未排期的错题，用 created_at 初始化为“创建次日到期”
+            c.execute(
+                "UPDATE error_records SET next_review_at = "
+                "date(created_at, '+1 day') "
+                "WHERE next_review_at IS NULL AND created_at IS NOT NULL"
+            )
+            # 新列就位后再建到期索引（不能放进 _SCHEMA，否则旧库会先于建列引用到它）
+            c.execute(
+                "CREATE INDEX IF NOT EXISTS idx_err_due ON error_records(next_review_at)"
+            )
 
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -83,11 +113,14 @@ class Store:
 
     def save_errors(self, records: List[ErrorRecord]) -> int:
         now = datetime.now().isoformat(timespec="seconds")
+        first_due = (datetime.now() + timedelta(days=_REVIEW_INTERVALS[0])).strftime(
+            "%Y-%m-%d"
+        )
         rows = [
             (
                 r.student_id, r.subject, r.question_no, r.knowledge_point,
                 r.error_type, r.student_answer, r.correct_answer,
-                r.cause, r.suggestion, now,
+                r.cause, r.suggestion, 0, None, first_due, now,
             )
             for r in records
         ]
@@ -97,7 +130,8 @@ class Store:
             c.executemany(
                 "INSERT INTO error_records(student_id, subject, question_no,"
                 " knowledge_point, error_type, student_answer, correct_answer,"
-                " cause, suggestion, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                " cause, suggestion, review_count, last_review_at, next_review_at,"
+                " created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 rows,
             )
         return len(rows)
@@ -214,6 +248,73 @@ class Store:
                 f"SELECT * FROM error_records{where} ORDER BY id DESC LIMIT ?", params
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def errors_by_weak_points(
+        self, points: List[str], student_id: Optional[str] = None, per_point: int = 3
+    ) -> List[dict]:
+        """按薄弱知识点拉取典型错题（供智能推题作为变式依据）。"""
+        out: List[dict] = []
+        with self._conn() as c:
+            for kp in points:
+                clauses = ["knowledge_point=?"]
+                params: list = [kp]
+                if student_id:
+                    clauses.append("student_id=?")
+                    params.append(student_id)
+                rows = c.execute(
+                    "SELECT * FROM error_records WHERE "
+                    + " AND ".join(clauses)
+                    + " ORDER BY id DESC LIMIT ?",
+                    params + [per_point],
+                ).fetchall()
+                out.extend(dict(r) for r in rows)
+        return out
+
+    # ---------------- 间隔复习调度 ----------------
+    def due_reviews(
+        self, student_id: Optional[str] = None, limit: int = 50
+    ) -> List[dict]:
+        """返回已到期（next_review_at <= 今天）的待复习错题，逾期越久越优先。"""
+        today = datetime.now().strftime("%Y-%m-%d")
+        clauses = ["next_review_at<=?"]
+        params: list = [today]
+        if student_id:
+            clauses.append("student_id=?")
+            params.append(student_id)
+        params.append(limit)
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT *, CAST(julianday(?) - julianday(next_review_at) AS INTEGER)"
+                " AS overdue_days FROM error_records WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY overdue_days DESC, next_review_at ASC LIMIT ?",
+                [today] + params,
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def mark_reviewed(self, error_ids: List[int]) -> int:
+        """回写复习结果：已复习次数 +1，重排下一次到期日（按遗忘曲线递进）。"""
+        if not error_ids:
+            return 0
+        today = datetime.now()
+        n = 0
+        with self._conn() as c:
+            for eid in error_ids:
+                row = c.execute(
+                    "SELECT review_count FROM error_records WHERE id=?", (eid,)
+                ).fetchone()
+                if row is None:
+                    continue
+                new_count = (row["review_count"] or 0) + 1
+                idx = min(new_count - 1, len(_REVIEW_INTERVALS) - 1)
+                nxt = (today + timedelta(days=_REVIEW_INTERVALS[idx])).strftime("%Y-%m-%d")
+                c.execute(
+                    "UPDATE error_records SET review_count=?, last_review_at=?,"
+                    " next_review_at=? WHERE id=?",
+                    (new_count, today.isoformat(timespec="seconds"), nxt, eid),
+                )
+                n += 1
+        return n
 
 
 _store: Optional[Store] = None

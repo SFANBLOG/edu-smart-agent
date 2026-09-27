@@ -12,11 +12,11 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-from app.models import ErrorAnalysis, GradingResult
+from app.models import ErrorAnalysis, GradingResult, PracticePlan, TutorReply
 
 
 class PipelineState(BaseModel):
-    # 路由用任务类型
+    # 路由用任务类型：grade / analytics / tutor / recommend / review
     task: str = "grade"
 
     # ---- 批改任务输入 ----
@@ -32,6 +32,20 @@ class PipelineState(BaseModel):
     # ---- 学情任务输入 / 输出 ----
     subject: Optional[str] = None
     report: Optional[dict] = None
+
+    # ---- 辅导对话任务输入 / 输出 ----
+    question: str = ""  # 学生本轮提问
+    history: List[dict] = Field(default_factory=list)  # [{role, content}] 先前对话轮次
+    tutor_reply: Optional[TutorReply] = None
+
+    # ---- 智能推题任务输入 / 输出 ----
+    top_k: int = 3  # 针对前 k 个薄弱知识点推题
+    practice_plan: Optional[PracticePlan] = None
+
+    # ---- 间隔复习任务输出 / 回写 ----
+    review_queue: List[dict] = Field(default_factory=list)
+    review_ids: List[int] = Field(default_factory=list)  # 本次标记已复习的错题 id
+    reviewed: int = 0
 
     # ---- 流程日志（可观测 / 流式展示） ----
     steps: List[str] = Field(default_factory=list)

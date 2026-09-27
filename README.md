@@ -1,18 +1,21 @@
-# AI 批改 · 错题分析 · 学情分析系统
+# AI 批改 · 错题分析 · 学情分析 · 智能辅导系统
 
 > **FastAPI + LangChain + LangGraph + Agent + 多模态大模型** 实现的教育智能体系统。
 > 教师上传学生作业图片 → 多模态大模型**逐题批改** → 自动**错题归因** → 沉淀**错题本** →
-> 聚合产出**学情分析报告**（客观统计 + AI 教学洞察）。
+> 聚合产出**学情分析报告**；并对学生提供**苏格拉底式辅导**、**薄弱点智能推题**、**遗忘曲线复习调度**。
 
 ---
 
-## ✨ 三大核心功能
+## ✨ 六大核心功能
 
 | 功能 | 说明 | 关键技术 |
 |------|------|---------|
 | 📸 **AI 批改** | 读取作业/试卷图片，识别作答、判对错、逐题打分、标注知识点、给评语 | 多模态视觉模型 + `with_structured_output` 结构化输出 |
 | 📕 **错题分析** | 从批改结果挑出错题，按错误类型归因（概念/计算/审题/方法…）并给订正建议，落库错题本 | 文本推理模型 + SQLite 持久化 |
 | 📊 **学情分析** | 聚合平均得分率、知识点掌握度、错误类型分布、薄弱点，生成 AI 教学建议 | SQL 客观统计（无需 Key）+ LLM 洞察叙述 |
+| 💡 **AI 辅导** | 面向学生的多轮对话，结合其错题落点做苏格拉底式启发，不直接报答案 | 会话历史 + 薄弱点接地（grounding） |
+| 🎯 **智能推题** | 定位掌握率最低的知识点，据典型错题改编同类变式题，含提示与推荐理由 | 图路由 + 结构化出题（无 Key 回推错题重做） |
+| ⏰ **复习调度** | 按艾宾浩斯遗忘曲线（1/2/4/7/15/30 天）排期，拉取到期清单、一键回写已复习 | 确定性调度（无需大模型，随时可用） |
 
 ---
 
@@ -42,13 +45,19 @@
               ┌────────────┬───────────┼────────────┬──────────────┐
               ▼            ▼           ▼            ▼              ▼
         多模态VLM      文本LLM      SQLite 存储    MemorySaver    FastAPI
-       (qwen-vl)    (归因/报告)   批改记录+错题本   会话记忆      REST 服务
+       (qwen-vl)    (归因/报告)  批改+错题+复习排期  会话记忆      REST 服务
 ```
+
+> 五条按 `task` 路由的子链：`grade`（批改→归因→落库）、`analytics`（统计→洞察）、
+> `tutor`（辅导对话）、`recommend`（智能推题）、`review`（复习调度），各链执行完即 END。
 
 - **批改链 (grade)**：`grading → error → persist` —— 图片经多模态模型结构化批改，错题归因后写入数据库，长期积累学情数据。
 - **学情链 (analytics)**：`stats → report` —— 先用纯 SQL 聚合客观指标（**无密钥也能出统计**），再让大模型补充自然语言洞察。
+- **辅导链 (tutor)**：读取该生薄弱知识点作为接地 → 多轮启发式对话（无密钥时降级为模板启发）。
+- **推题链 (recommend)**：从错题本定位薄弱点 → 取典型错题作变式依据 → 生成变式练习计划（无密钥时回推错题重做）。
+- **复习链 (review)**：基于错题本上的 `review_count/next_review_at` 做确定性排期，拉到期清单/回写已复习，**无需大模型**。
 - **checkpointer**：`MemorySaver` 按 `thread_id` 维护会话上下文。
-- **优雅降级**：未配置密钥时批改链返回占位结果、学情链仍产出客观统计，全流程不崩溃。
+- **优雅降级**：未配置密钥时批改链返回占位结果、学情链仍产出客观统计、推题回推错题、复习链完全可用，全流程不崩溃。
 
 ---
 
@@ -60,18 +69,21 @@ edu-smart-agent/
 │   ├── main.py                 # FastAPI 入口
 │   ├── config.py               # 配置(pydantic-settings)
 │   ├── core/llm.py             # 多模态VLM / 文本LLM 工厂
-│   ├── models/                 # 领域模型：批改结果/错题/学情报告
-│   ├── db/store.py             # SQLite：批改记录+错题本+SQL统计
+│   ├── models/                 # 领域模型：批改结果/错题/学情报告/推题/复习
+│   ├── db/store.py             # SQLite：批改记录+错题本(含复习排期)+SQL统计
 │   ├── agents/
 │   │   ├── state.py            # LangGraph 状态(task 路由)
-│   │   ├── prompts.py          # 批改/归因/学情 提示词
+│   │   ├── prompts.py          # 批改/归因/学情/辅导/推题 提示词
 │   │   ├── grading_agent.py    # AI批改节点(多模态+结构化输出)
 │   │   ├── error_agent.py      # 错题归因 + 落库节点
 │   │   ├── analytics_agent.py  # 学情统计 + AI报告节点
-│   │   └── graph.py            # LangGraph 管线装配
+│   │   ├── tutor_agent.py      # 苏格拉底式辅导对话节点
+│   │   ├── recommend_agent.py  # 薄弱点智能推题节点
+│   │   ├── review_agent.py     # 间隔复习调度节点(确定性)
+│   │   └── graph.py            # LangGraph 管线装配(五路路由)
 │   ├── service/                # 请求模型 + 调用管线
 │   └── api/routes.py           # REST 端点
-├── static/index.html           # 教师端(批改/错题本/学情 三栏)
+├── static/index.html           # 教师/学生端(批改/错题本/学情/辅导/推题/复习 六栏)
 ├── scripts/seed_demo.py        # 演示数据(无Key也能看学情)
 ├── tests/test_smoke.py         # 冒烟测试(无需密钥)
 ├── requirements.txt / .env.example
@@ -114,7 +126,10 @@ uvicorn app.main:app --reload --port 8000
 | POST | `/api/grade` | JSON 传入图片(base64/url) → 批改 + 错题分析 + 落库 |
 | POST | `/api/grade/upload` | 直接上传一张作业图片批改（multipart） |
 | POST | `/api/analytics` | 学情分析报告（可按 student_id / subject 过滤） |
-| GET  | `/api/errors` | 查询错题本明细 |
+| POST | `/api/tutor` | 苏格拉底式辅导对话（传入 question + history，返回一句启发） |
+| POST | `/api/recommend` | 基于薄弱知识点的个性化变式推题（可传 top_k / subject） |
+| POST | `/api/review` | 拉取到期复习队列；传 review_ids 则先回写已复习再返回新队列 |
+| GET  | `/api/errors` | 查询错题本明细（含复习次数字段） |
 
 **批改请求示例**：
 ```bash
@@ -132,9 +147,11 @@ curl -X POST http://localhost:8000/api/analytics -H "Content-Type: application/j
 
 ## ✅ 验证状态
 
-- `pytest -q` → **4 passed**（应用装配、存储 SQL 聚合、批改链降级、学情端点）
+- `pytest -q` → **7 passed**（应用装配、存储 SQL 聚合、批改链降级、学情端点、
+  复习排期与回写、薄弱点取数、辅导/推题/复习端点无密钥降级）
 - 端到端实测：配置真实 DashScope 密钥后，`/api/analytics` 执行 `['stats','report']`，
   客观统计（知识点掌握度 / 错误类型分布 / 薄弱点排序）正确，且 **AI 学情洞察 narrative 真实生成成功**。
+- 本地旧库兼容：`Store` 启动时自动迁移 `error_records` 新增 `review_count/last_review_at/next_review_at` 列并建索引。
 
 ---
 
