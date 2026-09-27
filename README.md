@@ -6,6 +6,21 @@
 
 ---
 
+## 📦 代码仓库（双平台镜像）
+
+| 平台 | 地址 | git 远端 |
+|------|------|---------|
+| Gitee | https://gitee.com/BLOGSFan/edu-smart-agent | `origin` |
+| GitHub | https://github.com/SFANBLOG/edu-smart-agent | `github` |
+
+一次提交同步推送两端：
+
+```bash
+git push origin master ; git push github master
+```
+
+---
+
 ## ✨ 六大核心功能
 
 | 功能 | 说明 | 关键技术 |
@@ -22,30 +37,20 @@
 ## 🧭 架构：LangGraph 多智能体管线
 
 ```
-                       ┌─────────────────────── LangGraph ───────────────────────┐
-  教师端(浏览器)         │                                                          │
- ┌──────────┐  HTTP     │   START ──(按 task 路由)──┐                              │
- │ 作业图片  │──────────▶│                           ├─ "grade" ─▶ [grading]        │
- │ 文字请求  │           │                           │              │ 多模态批改     │
- └──────────┘           │                           │              ▼               │
-                        │                           │           [error] 错题归因    │
-                        │                           │              ▼               │
-                        │                           │           [persist] 落库      │
-                        │                           │              ▼               │
-                        │                           │              END             │
-                        │                           │                              │
-                        │                           └─ "analytics" ─▶ [stats]       │
-                        │                                            │  SQL 聚合     │
-                        │                                            ▼             │
-                        │                                         [report] AI洞察  │
-                        │                                            ▼             │
-                        │                                           END             │
-                        └──────────────────────────────────────────────────────────┘
-                                       │
-              ┌────────────┬───────────┼────────────┬──────────────┐
-              ▼            ▼           ▼            ▼              ▼
-        多模态VLM      文本LLM      SQLite 存储    MemorySaver    FastAPI
-       (qwen-vl)    (归因/报告)  批改+错题+复习排期  会话记忆      REST 服务
+                     ┌───────────────── LangGraph（按 task 路由）─────────────────┐
+ 教师/学生端(浏览器)  │                                                             │
+┌───────────┐ HTTP   │  START ┬─ "grade"     ▶ [grading] ▶ [error] ▶ [persist] ▶ END │
+│ 作业图片   │───────▶│        ├─ "analytics" ▶ [stats]   ▶ [report]          ▶ END  │
+│ 文字/提问  │        │        ├─ "tutor"     ▶ [tutor]                       ▶ END  │
+└───────────┘        │        ├─ "recommend" ▶ [recommend]                    ▶ END  │
+                     │        └─ "review"    ▶ [review]                       ▶ END  │
+                     └─────────────────────────────────────────────────────────────┘
+                                     │
+             ┌───────────┬───────────┼───────────┬──────────────┐
+             ▼           ▼           ▼           ▼              ▼
+       多模态VLM     文本LLM      SQLite 存储   MemorySaver    FastAPI
+      (qwen-vl)  (归因/报告/    批改+错题+     会话记忆       REST 服务
+                  辅导/推题)     复习排期
 ```
 
 > 五条按 `task` 路由的子链：`grade`（批改→归因→落库）、`analytics`（统计→洞察）、
@@ -167,6 +172,8 @@ curl -X POST http://localhost:8000/api/analytics -H "Content-Type: application/j
 ## 📌 说明
 
 - 参考的微信文章链接因平台反爬无法抓取正文；本系统按指定技术栈
-  （**FastAPI + LangChain + LangGraph + Agent + 多模态**）针对「AI批改 / 错题分析 / 学情分析」场景完整实现。
+  （**FastAPI + LangChain + LangGraph + Agent + 多模态**）实现。
+- 功能广度参考同类教育 Agent（Khanmigo 引导式辅导、松鼠AI Weak-point 推题、
+  遗忘曲线错题本等）的标志性能力，在学生侧扩展了**辅导 / 推题 / 复习调度**三条链。
 - 生产化建议：`MemorySaver` 换 Postgres checkpointer；`/api` 加鉴权与限流；
   错题本按学校/班级多租户隔离；批改结果增加人工复核回写。
