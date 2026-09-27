@@ -1,0 +1,16 @@
+# ---- Web 框架 ----
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+sse-starlette==2.1.0
+
+# ---- LangChain / LangGraph 栈 ----
+langchain==0.3.14
+langchain-core==0.3.29
+langchain-openai==0.3.0
+langgraph==0.2.62
+
+# ---- 配置 / 校验 ----
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
